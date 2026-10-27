@@ -1,33 +1,33 @@
-  Lago Chinchaycocha (Junín) visto desde el espacio · 2016–2026
-  PARÁMETROS INICIALES 
+// Lago Chinchaycocha (Junín) visto desde el espacio - Análisis 10 años  (2016–2026)
+// PARÁMETROS INICIALES 
 var ANIO_INICIO = 2016;
 var ANIO_FIN    = 2026;
-var MES_SECO_INI = 6;     junio
-var MES_SECO_FIN = 9;     setiembre
-var UMBRAL_MNDWI = 0;     MNDWI  0  = agua
+var MES_SECO_INI = 6;     // junio
+var MES_SECO_FIN = 9;     // setiembre
+var UMBRAL_MNDWI = 0;    // MNDWI  0  = agua
 
- definimos área de estudio 
+// definimos área de estudio 
 var caja = ee.Geometry.Rectangle([-76.30, -11.25, -75.90, -10.80]);
- Punto en el centro del lago (para ubicar la cuenca)
+// Punto en el centro del lago (para ubicar la cuenca)
 var centroLago = ee.Geometry.Point([-76.10, -11.02]);
 
 Map.centerObject(caja, 10);
 Map.addLayer(caja, {color 'yellow'}, 'Zona de estudio', false);
 
 
- 1. MÁSCARA DEL LAGO
- Usamos el máximo histórico de agua del JRC (1984–2021) para que solo
- contemos píxeles que alguna vez fueron agua (evita confundir sombras
- de cerros o suelos oscuros con agua).
+// 1. MÁSCARA DEL LAGO
+// Usamos el máximo histórico de agua del JRC (1984–2021) para que solo
+// contemos píxeles que alguna vez fueron agua (evita confundir sombras
+// de cerros o suelos oscuros con agua).
 
 var jrc = ee.Image('JRCGSW1_4GlobalSurfaceWater');
 var zonaLago = jrc.select('max_extent').eq(1).clip(caja);
 Map.addLayer(zonaLago.selfMask(), {palette ['cyan']}, 'Máx. extensión histórica (JRC)', false);
 
- 2.  IMÁGENES LANDSAT 8 + 9 (Colección 2, Nivel 2 = reflectancia)
+//  2.  IMÁGENES LANDSAT 8 + 9 (Colección 2, Nivel 2 = reflectancia)
 
 function prepararLandsat(img) {
-   2a. Quitar nubes, sombras y nieve con la banda de calidad QA_PIXEL
+   // 2A. Quitar nubes, sombras y nieve con la banda de calidad QA_PIXEL
   var qa = img.select('QA_PIXEL');
   var nubeDilatada = qa.bitwiseAnd(1  1).neq(0);
   var nube         = qa.bitwiseAnd(1  3).neq(0);
@@ -35,10 +35,10 @@ function prepararLandsat(img) {
   var nieve        = qa.bitwiseAnd(1  5).neq(0);
   var limpio = nubeDilatada.or(nube).or(sombra).or(nieve).not();
 
-   2B. Pasar números digitales a reflectancia (0–1)
+  // 2B. Pasar números digitales a reflectancia (0–1)
   var refl = img.select('SR_B.').multiply(0.0000275).add(-0.2);
 
-   2C. MNDWI = (Verde − SWIR1)  (Verde + SWIR1)  =  B3 y B6 en Landsat 89
+  // 2C. MNDWI = (Verde − SWIR1)  (Verde + SWIR1)  =  B3 y B6 en Landsat 89
   var mndwi = refl.normalizedDifference(['SR_B3', 'SR_B6']).rename('MNDWI');
 
   return refl.addBands(mndwi).updateMask(limpio)
@@ -55,9 +55,9 @@ var landsat = ee.ImageCollection('LANDSATLC08C02T1_L2')
 print('N° de imágenes Landsat usadas (época seca)', landsat.size());
 
 
- 3. ÁREA DEL LAGO POR AÑO
- Para cada año mediana del MNDWI de jun–set - agua = MNDWI  0
- - área = suma de (píxel agua × área del píxel)
+// 3. ÁREA DEL LAGO POR AÑO
+// Para cada año mediana del MNDWI de jun–set - agua = MNDWI  0
+// - área = suma de (píxel agua × área del píxel)
 
 var anios = ee.List.sequence(ANIO_INICIO, ANIO_FIN);
 
@@ -94,7 +94,7 @@ print(ui.Chart.feature.byFeature(tablaArea, 'anio', 'area_km2')
 
 
 
- 4. MAPAS ¿CÓMO SE VE EL LAGO (primer año vs último año)
+ // 4. COMO SE VE EL LAGO  (ANTES VS DESPUES)
 
 function mapaAnio(anio) {
   var col = landsat.filter(ee.Filter.calendarRange(anio, anio, 'year'));
@@ -108,8 +108,8 @@ mapaAnio(2023);
 mapaAnio(ANIO_FIN);
 
 
- 5.  CLIMA LLUVIA (CHIRPS) Y TEMPERATURA  EVAPORACIÓN (ERA5-Land)
- Año hidrológico = setiembre (año−1) a agosto (año)
+ // 5.  CLIMA LLUVIA (CHIRPS) Y TEMPERATURA  EVAPORACIÓN (ERA5-Land)
+ // Año hidrológico = setiembre (año−1) a agosto (año)
 
 var cuenca = ee.FeatureCollection('WWFHydroSHEDSv1Basinshybas_7')
   .filterBounds(centroLago).geometry();
@@ -124,17 +124,17 @@ function climaDelAnio(anio) {
   var ini = ee.Date.fromYMD(anio.subtract(1), 9, 1);
   var fin = ee.Date.fromYMD(anio, 9, 1);
 
-   Lluvia total del año hidrológico (mm) – promedio en la cuenca
+  // Lluvia total del año hidrológico (mm) – promedio en la cuenca
   var pp = chirps.filterDate(ini, fin).select('precipitation').sum()
     .reduceRegion({reducer ee.Reducer.mean(), geometry cuenca, scale 5000})
     .get('precipitation');
 
-   Temperatura media (°C) y evaporación (mm) de ERA5-Land sobre la cuenca
+   // Temperatura media (°C) y evaporación (mm) de ERA5-Land sobre la cuenca
   var e5 = era5.filterDate(ini, fin);
   var temp = e5.select('temperature_2m').mean().subtract(273.15)
     .reduceRegion({reducer ee.Reducer.mean(), geometry cuenca, scale 11000})
     .get('temperature_2m');
-   En ERA5 la evaporación sale negativa (es agua que SE VA) la volteamos
+  // En ERA5 la evaporación sale negativa (es agua que SE VA) la volteamos
   var evap = e5.select('total_evaporation_sum').sum().multiply(-1000)
     .reduceRegion({reducer ee.Reducer.mean(), geometry cuenca, scale 11000})
     .get('total_evaporation_sum');
@@ -171,7 +171,7 @@ print(ui.Chart.feature.byFeature(tablaClima, 'anio_hidrologico', 'temp_C')
 
 
 
- 6. DESCARGAR LAS TABLAS 
+ // 6. DESCARGAR LAS TABLAS 
 
 Export.table.toDrive({
   collection tablaArea,
